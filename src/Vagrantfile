@@ -1,0 +1,84 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# VM memory size
+$vmMemory = '2048'
+
+# Host IP address to access VM
+$hostIp = '192.168.1.33'
+
+# Folder on host machine that will be synched with the VM
+$hostSynchedFolder = '../../_vagrant-workspace'
+
+# Folder on VM that will be synched with the host machine
+$guestSynchedFolder = '/users/vagrant/workspace'
+
+# MySQL root account password
+$mysqlRootPassword = 'root'
+
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+Vagrant.configure("2") do |config|
+  # Every Vagrant development environment requires a box. You can search for
+  # boxes at https://vagrantcloud.com/search.
+  config.vm.box = "ubuntu/xenial64"
+
+  # Create a private network, which allows host-only access to the machine
+  # using a specific IP.
+  config.vm.network "private_network", ip: $hostIp
+
+  # Share an additional folder to the guest VM. The first argument is
+  # the path on the host to the actual folder. The second argument is
+  # the path on the guest to mount the folder. And the optional third
+  # argument is a set of non-required options.
+  config.vm.synced_folder $hostSynchedFolder, $guestSynchedFolder
+
+  # Provider-specific configuration so you can fine-tune various
+  # backing providers for Vagrant. These expose provider-specific options.
+  config.vm.provider "virtualbox" do |vb|
+    # Customize the amount of memory on the VM:
+    vb.memory = $vmMemory
+  end
+
+  # Enable provisioning with a shell script. Additional provisioners such as
+  # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
+  # documentation for more information about their specific syntax and use.
+  config.vm.provision "shell" do |shell|
+    shell.inline = <<-SHELL
+      # Update and upgrade packages
+      sudo apt-get update
+      sudo apt-get upgrade
+
+      # Install Apache and set server name
+      sudo apt-get install apache2 -y
+      sudo echo "ServerName localhost" >> /etc/apache2/apache2.conf
+      
+      # Install MySQL (non-interactive mode)
+      sudo debconf-set-selections <<< "mysql-server mysql-server/root_password password $2"
+      sudo debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $2"
+      sudo DEBIAN_FRONTEND=noninteractive apt-get -y install mysql-server
+
+      # Install PHP and PHP Apache module
+      sudo apt-get install -y php libapache2-mod-php
+
+      # Install phpMyAdmin (non-interactive mode)
+      debconf-set-selections <<< "phpmyadmin phpmyadmin/dbconfig-install boolean true"
+      debconf-set-selections <<< "phpmyadmin phpmyadmin/app-password-confirm password $2"
+      debconf-set-selections <<< "phpmyadmin phpmyadmin/mysql/admin-pass password $2"
+      debconf-set-selections <<< "phpmyadmin phpmyadmin/mysql/app-pass password $2"
+      debconf-set-selections <<< "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2"
+      sudo DEBIAN_FRONTEND=noninteractive apt-get -y install phpmyadmin
+
+      # Restart Apache and test configuration
+      sudo service apache2 restart
+      sudo apache2ctl configtest
+
+      # Add Node.js (LTS) PPA and then install it
+      curl -sL https://deb.nodesource.com/setup_10.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+    SHELL
+    shell.args = [$hostIp, $mysqlRootPassword]
+  end
+end
